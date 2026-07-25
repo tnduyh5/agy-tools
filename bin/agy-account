@@ -31,7 +31,9 @@ case "${1:-}" in
     blob=$(security find-generic-password -s "$PSVC" -a "$2" -w 2>/dev/null) \
       || { echo "no profile '$2' — run: agy-account save $2 (while logged into that account)"; exit 1; }
     # snapshot whatever is live right now so a not-yet-saved login is never lost
-    cur=$(live_blob) && security add-generic-password -U -s "$PSVC" -a "_last" -w "$cur" || true
+    if cur=$(live_blob); then
+      security add-generic-password -U -s "$PSVC" -a "_last" -w "$cur" || true
+    fi
     security delete-generic-password -s "$SVC" -a "$ACCT" >/dev/null 2>&1 || true
     security add-generic-password -s "$SVC" -a "$ACCT" -w "$blob"
     echo "switched to profile '$2' — restart any running agy session (token is read at startup)"
