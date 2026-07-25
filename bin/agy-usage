@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""agy-usage — show remaining Antigravity (agy) quota for every saved account.
+
+For each profile saved by `agy-account`, this reads the stored OAuth token from
+the macOS keychain, refreshes it offline (does NOT touch the live agy login),
+and calls the same quota endpoint the CLI uses. Read-only: nothing is written
+back to the keychain.
+
+The OAuth client_id/secret needed to refresh a token are not shipped with this
+tool — they are extracted at runtime from your local `agy` binary (they are
+public "installed-app" credentials embedded in it) and cached under
+~/.cache/agy-tools/. This keeps a vendor secret out of the repo and adapts
+automatically if Antigravity rotates it.
+
+  agy-usage           one line per account (lowest remaining bucket + reset)
+  agy-usage -f        full per-model breakdown
+"""
+import base64, json, os, re, shutil, subprocess, sys, urllib.error, urllib.parse, urllib.request
+
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+API = "https://daily-cloudcode-pa.googleapis.com/v1internal"
+PROFILE_SVC = "gemini-profile"
+CACHE = os.path.expanduser("~/.cache/agy-tools/oauth.json")
+
+
+def sh(*args):
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def post_json(url, payload, bearer=None):
+    data = payload.encode() if isinstance(payload, str) else json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data)
+    if bearer:
+        req.add_header("Authorization", f"Bearer {bearer}")
+        req.add_header("Content-Type", "application/json")
+    else:
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        try:
+            return {"error": json.load(e).get("error", {})}
+        except Exception:
+            return {"error": f"HTTP {e.code}"}
+
+
+# --- OAuth client credentials: extract from the agy binary, verify, cache ---
+
+def agy_binary():
+    p = shutil.which("agy")
+    if p:
+        return p
+    fallback = os.path.expanduser("~/.local/bin/agy")
+    return fallback if os.path.exists(fallback) else None
+
+
+def extract_creds(binary):
+    """Return (client_ids, secrets) scraped from the binary via `strings`."""
+    out = sh("strings", binary).stdout
+    cids = sorted(set(re.findall(r"\d{10,}-\w+\.apps\.googleusercontent\.com", out)))
+    secs = sorted(set(re.findall(r"GOCSPX-[A-Za-z0-9_-]{28}", out)))
+    return cids, secs
+
+
+def working_pair(refresh_token):
+    """Find a (client_id, secret) that refreshes the token. Cache the winner."""
+    if os.path.exists(CACHE):
+        try:
+            c = json.load(open(CACHE))
+            r = post_json(TOKEN_URL, urllib.parse.urlencode({
+                "client_id": c["client_id"], "client_secret": c["client_secret"],
+                "refresh_token": refresh_token, "grant_type": "refresh_token"}))
+            if "access_token" in r:
+                return c["client_id"], c["client_secret"], r["access_token"]
+        except Exception:
+            pass
+    binary = agy_binary()
+    if not binary:
+        return None, None, None
+    cids, secs = extract_creds(binary)
+    for cid in cids:
+        for sec in secs:
+            r = post_json(TOKEN_URL, urllib.parse.urlencode({
+                "client_id": cid, "client_secret": sec,
+                "refresh_token": refresh_token, "grant_type": "refresh_token"}))
+            if "access_token" in r:
+                os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+                json.dump({"client_id": cid, "client_secret": sec}, open(CACHE, "w"))
+                return cid, sec, r["access_token"]
+    return None, None, None
+
+
+# --- keychain profiles ---
+
+def list_profiles():
+    lines = sh("security", "dump-keychain").stdout.splitlines()
+    names, want = [], f'"svce"<blob>="{PROFILE_SVC}"'
+    for i, ln in enumerate(lines):
+        if want in ln:
+            for j in range(i, max(i - 14, -1), -1):
+                if '"acct"' in lines[j]:
+                    n = lines[j].split('="', 1)[1].rstrip('"')
+                    if n != "_last":
+                        names.append(n)
+                    break
+    return sorted(set(names))
+
+
+def token_blob(name):
+    r = sh("security", "find-generic-password", "-s", PROFILE_SVC, "-a", name, "-w")
+    if r.returncode != 0:
+        return None
+    _, b64 = r.stdout.strip().split(":", 1)  # strip "go-keyring-base64:" prefix
+    return json.loads(base64.b64decode(b64))
+
+
+def email_from_id_token(idt):
+    try:
+        p = idt.split(".")[1]
+        p += "=" * (-len(p) % 4)
+        return json.loads(base64.urlsafe_b64decode(p)).get("email", "?")
+    except Exception:
+        return "?"
+
+
+def account_usage(name):
+    blob = token_blob(name)
+    if not blob:
+        return name, "?", None, "no token in keychain"
+    email = email_from_id_token(blob.get("id_token", ""))
+    refresh = blob.get("token", {}).get("refresh_token")
+    if not refresh:
+        return name, email, None, "no refresh_token in stored blob"
+    _, _, access = working_pair(refresh)
+    if not access:
+        return name, email, None, "token refresh failed (could not extract agy OAuth creds?)"
+    la = post_json(f"{API}:loadCodeAssist", {"metadata": {"ideType": "ANTIGRAVITY"}}, access)
+    project = la.get("cloudaicompanionProject")
+    tier = (la.get("paidTier") or la.get("currentTier") or {}).get("name", "")
+    if not project:
+        return name, email, None, "no project on account (not onboarded?)"
+    q = post_json(f"{API}:retrieveUserQuota", {"project": project}, access)
+    buckets = q.get("buckets")
+    if buckets is None:
+        return name, email, None, f"quota error: {q.get('error','?')}"
+    return name, email, (tier, buckets), None
+
+
+def pct(f):
+    return f"{f*100:.0f}%"
+
+
+def main():
+    full = "-f" in sys.argv or "--full" in sys.argv
+    profiles = list_profiles()
+    if not profiles:
+        print("no profiles saved — run: agy-account save <name>")
+        return
+    for name in profiles:
+        nm, email, data, err = account_usage(name)
+        if err:
+            print(f"{nm:6s} {email:26s} ⚠ {err}")
+            continue
+        tier, buckets = data
+        lo = min(buckets, key=lambda b: b.get("remainingFraction", 1))
+        reset = lo.get("resetTime", "?").replace("T", " ").replace("Z", " UTC")
+        tag = "Ultra" if "Ultra" in tier else (tier or "?")
+        lowest = f"lowest {lo.get('modelId','?')} {pct(lo.get('remainingFraction',1))}"
+        print(f"{nm:6s} {email:26s} {tag:6s} {lowest:34s} reset {reset}")
+        if full:
+            for b in buckets:
+                print(f"         {b.get('modelId','?'):34s} {pct(b.get('remainingFraction',1)):>5s}")
+
+
+if __name__ == "__main__":
+    main()
