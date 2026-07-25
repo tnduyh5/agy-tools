@@ -45,6 +45,7 @@ case "${1:-}" in
   whoami)
     # agy logs the authenticated email at startup; read it from the newest CLI log
     # (sed -n 1p, not head -1: head would SIGPIPE ls under pipefail with many logs)
+    # shellcheck disable=SC2012  # log names are cli-<timestamp>.log — safe to sort with ls
     log=$(ls -t "$HOME/.gemini/antigravity-cli/log"/cli-*.log 2>/dev/null | sed -n 1p)
     { [ -n "$log" ] && grep -ao 'email=[^,]*' "$log" | sed -n '$p' | cut -d= -f2; } \
       || echo "no auth line in newest agy log — run agy once and retry"
