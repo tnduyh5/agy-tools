@@ -1,5 +1,9 @@
 # agy-tools
 
+![platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![homebrew](https://img.shields.io/badge/homebrew-tnduyh5%2Ftap-F9A03C)
+
 Two tiny command-line helpers for the **Antigravity CLI** (`agy`, Google's
 Gemini coding agent) on **macOS**:
 
@@ -7,6 +11,8 @@ Gemini coding agent) on **macOS**:
 | --- | --- |
 | `agy-account` | Log into several accounts once, then switch between them with a single command — no browser re-login. |
 | `agy-usage` | Show the remaining model quota for **all** your saved accounts at once, without switching the live login. |
+
+![demo](assets/demo.svg)
 
 Both are read-only against your macOS keychain except for the explicit
 `agy-account save` / `use` / `logout` actions. No secrets are stored in this
@@ -40,6 +46,14 @@ glance.
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install tnduyh5/tap/agy-tools
+```
+
+### From source
+
 ```bash
 git clone https://github.com/tnduyh5/agy-tools.git
 cd agy-tools
@@ -48,6 +62,8 @@ ln -sf "$PWD"/bin/agy-account "$PWD"/bin/agy-usage ~/.local/bin/
 ```
 
 Make sure `~/.local/bin` is on your `PATH` (it already is if `agy` lives there).
+Installing from source with symlinks means edits to the repo take effect
+immediately, which is handy if you want to tweak the scripts.
 
 ---
 
