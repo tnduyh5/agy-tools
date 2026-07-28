@@ -11,19 +11,28 @@
 #   agy-account save <name>   snapshot the CURRENT login as profile <name>
 #   agy-account use <name>    switch the live login to profile <name>
 #   agy-account list          list saved profiles
+#   agy-account rm <name>     delete a saved profile from the keychain
 #   agy-account whoami        show the email agy last authenticated as
-#   agy-account logout        delete the live token (next `agy` run opens browser login)
+#   agy-account logout        drop the LOCAL token only — the grant stays valid at Google
+#   agy-account logout --revoke   also revoke the refresh token at Google (kills the grant)
 set -euo pipefail
 
 SVC=gemini ACCT=antigravity PSVC=gemini-profile
 
 live_blob() { security find-generic-password -s "$SVC" -a "$ACCT" -w 2>/dev/null; }
 
+# Store a secret without ever putting it in argv — a command line is readable via
+# `ps` by any process of the same user, which sidesteps the keychain ACL prompt
+# that normally guards this token. `security -w` with no value reads the secret
+# from stdin instead, asking for it twice. Its prompt goes to stderr, so stderr is
+# dropped here; real failures still surface through the exit status.
+put_pw() { printf '%s\n%s\n' "$3" "$3" | security add-generic-password -U -s "$1" -a "$2" -w 2>/dev/null; }
+
 case "${1:-}" in
   save)
     [ -n "${2:-}" ] || { echo "usage: agy-account save <name>"; exit 1; }
     blob=$(live_blob) || { echo "no live agy login found (service=$SVC account=$ACCT)"; exit 1; }
-    security add-generic-password -U -s "$PSVC" -a "$2" -w "$blob"
+    put_pw "$PSVC" "$2" "$blob"
     echo "saved current login as profile '$2'"
     ;;
   use)
@@ -32,10 +41,10 @@ case "${1:-}" in
       || { echo "no profile '$2' — run: agy-account save $2 (while logged into that account)"; exit 1; }
     # snapshot whatever is live right now so a not-yet-saved login is never lost
     if cur=$(live_blob); then
-      security add-generic-password -U -s "$PSVC" -a "_last" -w "$cur" || true
+      put_pw "$PSVC" "_last" "$cur" || true
     fi
     security delete-generic-password -s "$SVC" -a "$ACCT" >/dev/null 2>&1 || true
-    security add-generic-password -s "$SVC" -a "$ACCT" -w "$blob"
+    put_pw "$SVC" "$ACCT" "$blob"
     echo "switched to profile '$2' — restart any running agy session (token is read at startup)"
     ;;
   list)
@@ -43,6 +52,13 @@ case "${1:-}" in
       | grep -B12 "\"svce\"<blob>=\"$PSVC\"" \
       | sed -n 's/.*"acct"<blob>="\(.*\)".*/\1/p' | sort -u \
       | sed 's/^_last$/_last (auto-backup of the login replaced by the last "use")/'
+    ;;
+  rm)
+    [ -n "${2:-}" ] || { echo "usage: agy-account rm <name>"; exit 1; }
+    security delete-generic-password -s "$PSVC" -a "$2" >/dev/null 2>&1 \
+      || { echo "no profile '$2'"; exit 1; }
+    echo "deleted profile '$2' — note the grant is still valid at Google;"
+    echo "use 'agy-account logout --revoke' while that account is live to kill it for real"
     ;;
   whoami)
     # agy logs the authenticated email at startup; read it from the newest CLI log
@@ -53,6 +69,21 @@ case "${1:-}" in
       || echo "no auth line in newest agy log — run agy once and retry"
     ;;
   logout)
+    # Plain logout only drops the LOCAL copy: the refresh token stays valid at
+    # Google and any profile snapshot of the same grant still works. --revoke
+    # kills the grant itself. Revoke runs in python (stdlib) rather than
+    # `curl -d token=...` so the token never lands in argv.
+    if [ "${2:-}" = "--revoke" ]; then
+      blob=$(live_blob) || { echo "no live agy login found (service=$SVC account=$ACCT)"; exit 1; }
+      printf '%s' "$blob" | python3 -c '
+import base64, json, sys, urllib.parse, urllib.request
+rt = json.loads(base64.b64decode(sys.stdin.read().split(":", 1)[1]))["token"]["refresh_token"]
+urllib.request.urlopen("https://oauth2.googleapis.com/revoke",
+                       urllib.parse.urlencode({"token": rt}).encode(), timeout=20)
+' || { echo "revoke failed — the token is still valid at Google, so nothing was deleted locally"; exit 1; }
+      echo "refresh token revoked at Google"
+      echo "any saved profile sharing this grant is now dead too — re-save it after logging in again"
+    fi
     security delete-generic-password -s "$SVC" -a "$ACCT" >/dev/null
     echo "live token removed — next agy run will ask you to log in via browser"
     ;;

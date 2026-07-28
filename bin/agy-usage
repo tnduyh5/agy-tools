@@ -63,16 +63,36 @@ def extract_creds(binary):
     return cids, secs
 
 
+def refresh(cid, sec, refresh_token):
+    return post_json(TOKEN_URL, urllib.parse.urlencode({
+        "client_id": cid, "client_secret": sec,
+        "refresh_token": refresh_token, "grant_type": "refresh_token"}))
+
+
+def save_cache(cid, sec):
+    d = os.path.dirname(CACHE)
+    os.makedirs(d, exist_ok=True)
+    os.chmod(d, 0o700)  # chmod as well as makedirs(mode=): the dir may predate this
+    fd = os.open(CACHE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with open(fd, "w") as f:
+        json.dump({"client_id": cid, "client_secret": sec}, f)
+    os.chmod(CACHE, 0o600)  # O_CREAT keeps the old mode if the file already existed
+
+
 def working_pair(refresh_token):
     """Find a (client_id, secret) that refreshes the token. Cache the winner."""
     if os.path.exists(CACHE):
         try:
-            c = json.load(open(CACHE))
-            r = post_json(TOKEN_URL, urllib.parse.urlencode({
-                "client_id": c["client_id"], "client_secret": c["client_secret"],
-                "refresh_token": refresh_token, "grant_type": "refresh_token"}))
+            with open(CACHE) as f:
+                c = json.load(f)
+            r = refresh(c["client_id"], c["client_secret"], refresh_token)
             if "access_token" in r:
                 return c["client_id"], c["client_secret"], r["access_token"]
+            # The cached pair already worked once, so invalid_grant here means the
+            # stored refresh token itself is dead. Re-scanning the binary would
+            # just replay it against every candidate pair for nothing.
+            if r.get("error") == "invalid_grant":
+                return None, None, None
         except Exception:
             pass
     binary = agy_binary()
@@ -81,12 +101,9 @@ def working_pair(refresh_token):
     cids, secs = extract_creds(binary)
     for cid in cids:
         for sec in secs:
-            r = post_json(TOKEN_URL, urllib.parse.urlencode({
-                "client_id": cid, "client_secret": sec,
-                "refresh_token": refresh_token, "grant_type": "refresh_token"}))
+            r = refresh(cid, sec, refresh_token)
             if "access_token" in r:
-                os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-                json.dump({"client_id": cid, "client_secret": sec}, open(CACHE, "w"))
+                save_cache(cid, sec)
                 return cid, sec, r["access_token"]
     return None, None, None
 

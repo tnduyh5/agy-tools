@@ -73,9 +73,16 @@ immediately, which is handy if you want to tweak the scripts.
 agy-account save <name>   snapshot the CURRENT login as profile <name>
 agy-account use <name>    switch the live login to profile <name>
 agy-account list          list saved profiles
+agy-account rm <name>     delete a saved profile from the keychain
 agy-account whoami        show the email agy last authenticated as
-agy-account logout        delete the live token (next `agy` run opens browser login)
+agy-account logout        drop the LOCAL token only (next `agy` run opens browser login)
+agy-account logout --revoke   also revoke the refresh token at Google
 ```
+
+`logout` is local-only: it removes this machine's copy of the token, but the
+grant stays valid at Google and any profile snapshot of it keeps working. Use
+`logout --revoke` to kill the grant itself — that also invalidates every saved
+profile sharing it, so re-save them after logging in again.
 
 ### First-time setup (two accounts)
 
