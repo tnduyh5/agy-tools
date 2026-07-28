@@ -15,5 +15,3 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck agy-account
         run: shellcheck --severity=warning bin/agy-account
-      - name: compile agy-usage
-        run: python3 -m py_compile bin/agy-usage

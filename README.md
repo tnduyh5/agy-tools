@@ -4,19 +4,14 @@
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![homebrew](https://img.shields.io/badge/homebrew-tnduyh5%2Ftap-F9A03C)
 
-Two tiny command-line helpers for the **Antigravity CLI** (`agy`, Google's
-Gemini coding agent) on **macOS**:
-
-| Command | What it does |
-| --- | --- |
-| `agy-account` | Log into several accounts once, then switch between them with a single command — no browser re-login. |
-| `agy-usage` | Show the remaining model quota for **all** your saved accounts at once, without switching the live login. |
+`agy-account` — log into several **Antigravity CLI** (`agy`, Google's Gemini
+coding agent) accounts once, then switch between them with a single command, no
+browser re-login. **macOS** only.
 
 ![demo](assets/demo.svg)
 
-Both are read-only against your macOS keychain except for the explicit
-`agy-account save` / `use` / `logout` actions. No secrets are stored in this
-repo (see [How it works](#how-it-works)).
+It is read-only against your macOS keychain except for the explicit `save` /
+`use` / `rm` / `logout` actions. No secrets are stored in this repo.
 
 ---
 
@@ -25,13 +20,10 @@ repo (see [How it works](#how-it-works)).
 `agy` keeps exactly one login at a time, stored as an OAuth token in the macOS
 login keychain. If you have more than one account (e.g. two Google AI Ultra
 subscriptions) the only built-in way to switch is to log out and re-authenticate
-in the browser every time — and there is no command to see how much quota each
-account has left.
+in the browser every time.
 
 `agy-account` snapshots each account's token under its own name and swaps them in
-place, so switching is instant. `agy-usage` refreshes each saved token *offline*
-and calls the same quota endpoint the CLI uses, so you can compare accounts at a
-glance.
+place, so switching is instant.
 
 ---
 
@@ -39,8 +31,7 @@ glance.
 
 - **macOS** (uses the `security` keychain CLI — not portable to Linux/Windows)
 - The **Antigravity CLI** installed and logged in at least once (`agy`)
-- **Python 3** (standard library only — no `pip install`)
-- Optional: the `agy` binary on your `PATH`, or at `~/.local/bin/agy`
+- **Python 3** — only for `logout --revoke` (standard library, no `pip install`)
 
 ---
 
@@ -57,13 +48,13 @@ brew install tnduyh5/tap/agy-tools
 ```bash
 git clone https://github.com/tnduyh5/agy-tools.git
 cd agy-tools
-# put the two commands on your PATH (adjust the target dir to taste)
-ln -sf "$PWD"/bin/agy-account "$PWD"/bin/agy-usage ~/.local/bin/
+# put the command on your PATH (adjust the target dir to taste)
+ln -sf "$PWD"/bin/agy-account ~/.local/bin/
 ```
 
 Make sure `~/.local/bin` is on your `PATH` (it already is if `agy` lives there).
-Installing from source with symlinks means edits to the repo take effect
-immediately, which is handy if you want to tweak the scripts.
+Installing from source with a symlink means edits to the repo take effect
+immediately, which is handy if you want to tweak the script.
 
 ---
 
@@ -116,25 +107,6 @@ Notes:
 
 ---
 
-## `agy-usage` — see remaining quota for all accounts
-
-```bash
-agy-usage        # one line per account: lowest remaining bucket + reset time
-agy-usage -f     # full per-model breakdown
-```
-
-Example:
-
-```
-work      you@gmail.com          Ultra  lowest gemini-2.5-flash 100%   reset 2026-07-26 09:21 UTC
-personal  you.two@gmail.com      Ultra  lowest gemini-3-pro-preview 42% reset 2026-07-26 09:21 UTC
-```
-
-The "reset" time is a **rolling window** (now + the quota window), not a fixed
-daily clock, so it drifts by a few seconds between calls — that's expected.
-
----
-
 ## How it works
 
 - **Token storage.** `agy` stores its OAuth token in the macOS login keychain at
@@ -142,18 +114,23 @@ daily clock, so it drifts by a few seconds between calls — that's expected.
   per-name entries under `service=gemini-profile`. Switching accounts is just
   overwriting the live entry — nothing is sent anywhere.
 
-- **Reading quota without switching.** `agy-usage` reads each saved token's
-  `refresh_token`, exchanges it for a short-lived access token against Google's
-  OAuth endpoint, then calls `v1internal:loadCodeAssist` (to find the account's
-  project) and `v1internal:retrieveUserQuota`. This never modifies the live login
-  and never writes a token back to the keychain.
+- **Tokens never touch the command line.** A blob is handed to `security` over
+  stdin, not as an argument, because a command line is readable via `ps` by any
+  process of the same user — which would sidestep the keychain prompt that
+  guards it.
 
-- **No secrets in this repo.** Refreshing a token needs the OAuth
-  *client_id/secret*. Rather than committing Antigravity's credentials, `agy-usage`
-  extracts them from your **local `agy` binary** at runtime (they are public
-  "installed-app" credentials embedded in it), verifies which pair works, and
-  caches the winner in `~/.cache/agy-tools/oauth.json`. If Antigravity ever
-  rotates them, delete that cache and the tool re-discovers them.
+- **Nothing leaves the machine except an explicit revoke.** `logout --revoke` is
+  the only action that makes a network call (to Google's OAuth revoke endpoint).
+
+### Why there is no `agy-usage`
+
+An earlier version shipped a second command that tried to report remaining model
+quota per account. It was removed because the number could not be trusted: `agy`
+itself never calls a quota endpoint, the richer `retrieveUserQuotaSummary` in its
+binary returns 403 for normal accounts, and the reachable
+`v1internal:retrieveUserQuota` reports every bucket at 100% even after heavy use,
+with a `resetTime` of exactly `now + 24h` on every call. A quota display that
+always reads "100%" is worse than none.
 
 ---
 
@@ -162,16 +139,16 @@ daily clock, so it drifts by a few seconds between calls — that's expected.
 - **macOS only.** Everything hangs off the `security` keychain CLI.
 - Reading a keychain secret may prompt for keychain access the first time,
   depending on your setup. Allow the `security` tool and it won't ask again.
-- These tools are unofficial and depend on `agy`'s current keychain layout and
-  internal API paths. A future `agy` release could change either and break them.
+- `agy-account` is unofficial and depends on `agy`'s current keychain layout.
+  A future `agy` release could change it and break the tool.
 
 ---
 
 ## Disclaimer
 
 Unofficial, not affiliated with Google or the Antigravity team. Use it only with
-your **own** accounts and within the applicable Terms of Service. It moves tokens
-around your own machine and reads your own quota — nothing more.
+your **own** accounts and within the applicable Terms of Service. It moves your
+own tokens around your own machine — nothing more.
 
 ## License
 

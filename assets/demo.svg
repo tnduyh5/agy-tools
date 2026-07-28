@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="820" height="270" viewBox="0 0 820 270" xml:space="preserve" font-family="SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="13">
-  <rect x="0.5" y="0.5" width="819" height="269" rx="10" fill="#0d1117" stroke="#30363d"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="248" viewBox="0 0 820 248" xml:space="preserve" font-family="SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="13">
+  <rect x="0.5" y="0.5" width="819" height="247" rx="10" fill="#0d1117" stroke="#30363d"/>
   <rect x="0.5" y="0.5" width="819" height="36" rx="10" fill="#161b22"/>
   <rect x="0.5" y="26" width="819" height="11" fill="#161b22"/>
   <line x1="0.5" y1="37" x2="819.5" y2="37" stroke="#30363d"/>
@@ -15,7 +15,6 @@
   <text x="20" y="142"><tspan fill="#3fb950">$ </tspan><tspan fill="#e6edf3">agy-account use personal</tspan></text>
   <text x="20" y="164" fill="#8b949e">switched to profile 'personal' — restart any running agy session</text>
 
-  <text x="20" y="198"><tspan fill="#3fb950">$ </tspan><tspan fill="#e6edf3">agy-usage</tspan></text>
-  <text x="20" y="220"><tspan fill="#d2a8ff">work    </tspan><tspan fill="#8b949e">  you@gmail.com      </tspan><tspan fill="#f0883e"> Ultra </tspan><tspan fill="#8b949e"> lowest gemini-2.5-flash </tspan><tspan fill="#3fb950">100%</tspan><tspan fill="#8b949e">  reset 2026-07-26 09:23 UTC</tspan></text>
-  <text x="20" y="242"><tspan fill="#d2a8ff">personal</tspan><tspan fill="#8b949e">  you.two@gmail.com  </tspan><tspan fill="#f0883e"> Ultra </tspan><tspan fill="#8b949e"> lowest gemini-3-pro-preview </tspan><tspan fill="#d29922">42%</tspan><tspan fill="#8b949e">  reset 2026-07-26 09:23 UTC</tspan></text>
+  <text x="20" y="198"><tspan fill="#3fb950">$ </tspan><tspan fill="#e6edf3">agy-account whoami</tspan></text>
+  <text x="20" y="220" fill="#8b949e">you.two@gmail.com</text>
 </svg>
