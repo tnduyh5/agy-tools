@@ -115,9 +115,10 @@ Notes:
   overwriting the live entry — nothing is sent anywhere.
 
 - **Tokens never touch the command line.** A blob is handed to `security` over
-  stdin, not as an argument, because a command line is readable via `ps` by any
-  process of the same user — which would sidestep the keychain prompt that
-  guards it.
+  stdin (as a `security -i` command), not as an argument, because a command line
+  is readable via `ps` by any process of the same user — which would sidestep the
+  keychain prompt that guards it. Every write is read back and compared, so a
+  failed or truncated write is reported instead of leaving a broken profile.
 
 - **Nothing leaves the machine except an explicit revoke.** `logout --revoke` is
   the only action that makes a network call (to Google's OAuth revoke endpoint).
