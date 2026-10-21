@@ -23,10 +23,21 @@ live_blob() { security find-generic-password -s "$SVC" -a "$ACCT" -w 2>/dev/null
 
 # Store a secret without ever putting it in argv — a command line is readable via
 # `ps` by any process of the same user, which sidesteps the keychain ACL prompt
-# that normally guards this token. `security -w` with no value reads the secret
-# from stdin instead, asking for it twice. Its prompt goes to stderr, so stderr is
-# dropped here; real failures still surface through the exit status.
-put_pw() { printf '%s\n%s\n' "$3" "$3" | security add-generic-password -U -s "$1" -a "$2" -w 2>/dev/null; }
+# that normally guards this token. `security add-generic-password -w` with no
+# value can't be fed over a pipe: it prompts via readpassphrase, which reads
+# /dev/tty when there is one (so the piped value is ignored) and truncates at
+# 128 bytes otherwise — agy's token is ~2KB. Instead the whole command goes to
+# `security -i` on stdin. That mode quotes with `"` and `\`, and silently cuts
+# lines at ~4KB, so refuse values containing quote chars and read the entry back
+# to make sure what landed in the keychain is exactly what was meant to.
+put_pw() {
+  case "$1$2$3" in
+    *'"'*|*'\'*|*$'\n'*) echo "refusing to store '$2': value contains \", \\ or newline" >&2; return 1 ;;
+  esac
+  printf 'add-generic-password -U -s "%s" -a "%s" -w "%s"\n' "$1" "$2" "$3" | security -i >/dev/null
+  [ "$(security find-generic-password -s "$1" -a "$2" -w 2>/dev/null)" = "$3" ] \
+    || { echo "keychain write for '$2' did not round-trip" >&2; return 1; }
+}
 
 case "${1:-}" in
   save)
